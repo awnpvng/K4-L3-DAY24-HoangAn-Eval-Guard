@@ -41,6 +41,18 @@ def setup_presidio():
 
     registry = RecognizerRegistry()
     registry.load_predefined_recognizers()
+    # Bug phát hiện khi chạy --live: SpacyRecognizer (NER tiếng Anh, hỗ trợ
+    # PERSON/LOCATION/DATE_TIME/NRP) detect sai gần như MỌI câu tiếng Việt
+    # thành "PERSON" với score 0.85 — vì spaCy en_core_web_lg không hiểu
+    # tiếng Việt, nó đoán bừa theo pattern câu tiếng Anh. Kết quả: pii_scan()
+    # chặn nhầm 7/8 clean controls (false_positive_rate 88%, vi phạm rubric
+    # bắt buộc 8/8 clean allowed). Loại SpacyRecognizer khỏi registry — chỉ
+    # giữ các recognizer dựa trên regex/pattern (EMAIL_ADDRESS, PHONE_NUMBER
+    # quốc tế, CREDIT_CARD...), không phụ thuộc ngôn ngữ nên an toàn.
+    registry.recognizers = [r for r in registry.recognizers if "PERSON" not in r.supported_entities]
+    # US_DRIVER_LICENSE match "v2" (trong "v2.0") với score 0.3 — không liên
+    # quan đề bài (chỉ cần CCCD/CMND/phone/email VN), loại luôn.
+    registry.recognizers = [r for r in registry.recognizers if "US_DRIVER_LICENSE" not in r.supported_entities]
     registry.add_recognizer(cccd_recognizer)
     registry.add_recognizer(phone_recognizer)
 
