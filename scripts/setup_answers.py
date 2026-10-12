@@ -83,25 +83,27 @@ def build_pipeline():
 
 
 def run_query(q: str, search, reranker, top_k: int, client=None) -> tuple[str, list[str], str, str | None]:
-    from config import GOOGLE_API_KEY
+    from config import OPENAI_API_KEY, LLM_BASE_URL
 
     results = search.search(q)
     docs    = [{"text": r.text, "score": r.score, "metadata": r.metadata} for r in results]
     reranked = reranker.rerank(q, docs, top_k=top_k)
     contexts = [r.text for r in reranked] if reranked else [r.text for r in results[:3]]
 
-    if (GOOGLE_API_KEY or client is not None) and contexts:
+    if contexts:
         try:
             if client is None:
-                import google.generativeai as genai
-                genai.configure(api_key=GOOGLE_API_KEY)
-                client = genai.GenerativeModel(GENERATION_MODEL)
+                from openai import OpenAI
+                client = OpenAI(api_key=OPENAI_API_KEY, base_url=LLM_BASE_URL)
             ctx = "\n\n".join(contexts)
-            resp = client.generate_content(
-                ["Trả lời CHỈ dựa trên context. Nếu không có → nói 'Không tìm thấy.'",
-                 f"Context:\n{ctx}\n\nCâu hỏi: {q}"]
+            resp = client.chat.completions.create(
+                model=GENERATION_MODEL,
+                messages=[
+                    {"role": "system", "content": "Trả lời CHỈ dựa trên context. Nếu không có → nói 'Không tìm thấy.'"},
+                    {"role": "user",   "content": f"Context:\n{ctx}\n\nCâu hỏi: {q}"},
+                ],
             )
-            return resp.text, contexts, "llm", GENERATION_MODEL
+            return resp.choices[0].message.content, contexts, "llm", GENERATION_MODEL
         except Exception as e:
             print(f"  ⚠️  LLM generation failed: {e}")
 
@@ -133,12 +135,9 @@ def main(argv=None):
         sys.exit(1)
 
     print(f"\nRunning {len(test_set)} queries...")
-    from config import GOOGLE_API_KEY, GENERATION_MODEL
-    client = None
-    if GOOGLE_API_KEY:
-        import google.generativeai as genai
-        genai.configure(api_key=GOOGLE_API_KEY)
-        client = genai.GenerativeModel(GENERATION_MODEL)
+    from config import OPENAI_API_KEY, LLM_BASE_URL, GENERATION_MODEL
+    from openai import OpenAI
+    client = OpenAI(api_key=OPENAI_API_KEY, base_url=LLM_BASE_URL)
 
     # ── Checkpoint/resume: lưu ngay sau MỖI câu, để API quota/crash/network
     # giữa chừng không làm mất các câu đã xử lý. Chạy lại script sẽ tự resume
@@ -175,9 +174,7 @@ def main(argv=None):
 
         if (i + 1) % 10 == 0 or (i + 1) == len(remaining):
             print(f"  [{len(answers_by_id)}/{len(test_set)}] done ({time.time()-t_start:.0f}s elapsed)")
-        # Giữ dưới RPM limit của Gemini free tier: ~4s/request
-        if i < len(remaining) - 1:  # Không sleep ở request cuối
-            time.sleep(4)
+        # Ollama local không giới hạn quota/RPM — không cần sleep giữa các lần gọi.
 
     answers = [answers_by_id[item["id"]] for item in test_set]
 

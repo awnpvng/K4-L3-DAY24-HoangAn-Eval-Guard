@@ -86,11 +86,12 @@ def setup_nemo_rails():
     """
     from nemoguardrails import RailsConfig, LLMRails
     from nemoguardrails.llm.providers import register_llm_provider
-    from langchain_google_genai import ChatGoogleGenerativeAI
+    from langchain_community.chat_models import ChatOllama
 
-    # NeMo không tự nhận diện langchain-google-genai; đăng ký engine "gemini"
-    # để guardrails/config.yml dùng được Gemini thay vì OpenAI.
-    register_llm_provider("gemini", ChatGoogleGenerativeAI)
+    # Cả 2 Gemini API key free tier đã cạn quota RPD → NeMo chuyển sang LLM
+    # chạy local qua Ollama. NeMo không tự nhận diện ChatOllama, đăng ký thủ
+    # công engine "ollama" (base_url đọc từ guardrails/config.yml::parameters).
+    register_llm_provider("ollama", ChatOllama)
 
     config = RailsConfig.from_path(GUARDRAILS_CONFIG_DIR)
     rails  = LLMRails(config)

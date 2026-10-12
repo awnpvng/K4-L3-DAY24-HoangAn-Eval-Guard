@@ -14,8 +14,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- API Keys ---
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")  # Gemini
-GEMINI_API_KEY = GOOGLE_API_KEY  # Alias: m4_eval.py/m5_enrichment.py (từ bài Day 18) dùng tên này
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")  # Gemini — cả 2 key free tier đã cạn RPD, không còn dùng
+GEMINI_API_KEY = GOOGLE_API_KEY  # Alias: m4_eval.py/m5_enrichment.py (từ bài Day 18) vẫn import tên này (không dùng giá trị)
+OPENAI_API_KEY = "ollama"  # Alias: scripts/run_experiments.py (starter) chỉ check truthy; Ollama không check giá trị key
 HF_TOKEN = os.getenv("HF_TOKEN", "")  # Optional: for HuggingFace models
 
 # --- Qdrant (same as Day 18) ---
@@ -53,18 +54,27 @@ OUTPUT_SET_PATH = os.path.join(FIXTURES_DIR, "output_set_4.json")
 GUARDRAILS_CONFIG_DIR = os.path.join(ROOT_DIR, "guardrails")
 PAIR_QUESTION_IDS = (1, 5, 12, 21, 41)
 
-# --- LLM (Gemini) ---
-# gemini-2.0-flash đã bị Google retired (404). gemini-3.8-flash free tier chỉ
-# 20 requests/NGÀY — cạn ngay ở bước enrichment. Dùng gemini-3.1-flash-lite
-# (quota free tier riêng, cao hơn nhiều) cho generation/judge/enrichment.
-GENERATION_MODEL = "gemini-3.1-flash-lite"
-JUDGE_MODEL = "gemini-3.1-flash-lite"
+# --- LLM (local, qua Ollama) ---
+# Cả 2 Gemini API key free tier đã cạn quota RPD (500/ngày, reset ~24h) hai lần
+# liên tiếp trong cùng buổi chạy — không còn cách nào dùng Gemini hôm nay mà
+# không chờ cả nửa ngày. Chuyển hẳn sang LLM chạy local qua Ollama: không giới
+# hạn request, nhưng chạy chậm hơn và model nhỏ (7B) suy luận yếu hơn Gemini.
+GENERATION_MODEL = "qwen2.5:7b-instruct"
+JUDGE_MODEL = "qwen2.5:7b-instruct"
 GEMINI_MODEL = GENERATION_MODEL  # Alias: m4_eval.py/m5_enrichment.py (từ bài Day 18) dùng tên này
-# OpenAI-compatible endpoint của Gemini — cho phép dùng lại `openai` SDK/mock
-# test gốc (tests/conftest.py mock module "openai") thay vì đổi hẳn sang
-# google.generativeai (sẽ phá mock, khiến unit test gọi API thật).
-GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+OLLAMA_EMBED_MODEL = "nomic-embed-text"  # RAGAS context_precision/recall cần embedding riêng
+# Ollama expose OpenAI-compatible endpoint tại /v1 — cho phép dùng lại `openai`
+# SDK/mock test gốc (tests/conftest.py mock module "openai") không cần sửa gì.
+LLM_BASE_URL = "http://localhost:11434/v1"
+OLLAMA_NATIVE_URL = "http://localhost:11434"  # cho ChatOllama/OllamaEmbeddings (API gốc, không qua /v1)
 
 # --- Guardrail latency budget ---
 LATENCY_BUDGET_P95_MS = 500  # Full guard target; Task 12 currently measures input guards only.
 PRESIDIO_LANGUAGE = "en"    # Presidio base language; custom VN recognizers added via PatternRecognizer
+
+# Một số file runner cung cấp sẵn (vd. experiment_runners.py, experiment_support.py)
+# gọi `OpenAI()` không tham số — SDK tự đọc OPENAI_API_KEY/OPENAI_BASE_URL từ
+# os.environ. Set các biến này trỏ sang Ollama local để những lệnh gọi đó cũng
+# dùng đúng endpoint, không cần sửa từng nơi gọi `OpenAI()`.
+os.environ.setdefault("OPENAI_API_KEY", OPENAI_API_KEY)
+os.environ.setdefault("OPENAI_BASE_URL", LLM_BASE_URL)

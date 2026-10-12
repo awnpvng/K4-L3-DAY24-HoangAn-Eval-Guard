@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass, field
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import GOOGLE_API_KEY, JUDGE_MODEL, HUMAN_LABELS_PATH, GEMINI_OPENAI_BASE_URL
+from config import OPENAI_API_KEY, JUDGE_MODEL, HUMAN_LABELS_PATH, LLM_BASE_URL
 
 
 @dataclass
@@ -56,11 +56,11 @@ Trả lời JSON (chỉ JSON, không text khác):
 {{"winner": "A" hoặc "B" hoặc "tie", "reasoning": "giải thích ngắn gọn", "scores": {{"A": 0.0-1.0, "B": 0.0-1.0}}}}
 '''
 
-    # Dùng openai SDK trỏ tới endpoint OpenAI-compatible của Gemini, thay vì
-    # google.generativeai trực tiếp — để tests/conftest.py (mock module "openai")
+    # Dùng openai SDK trỏ tới endpoint OpenAI-compatible của Ollama local, thay
+    # vì gọi thẳng 1 SDK riêng — để tests/conftest.py (mock module "openai")
     # mock được đúng thiết kế gốc, tránh unit test gọi API thật.
     from openai import OpenAI
-    client = OpenAI(api_key=GOOGLE_API_KEY, base_url=GEMINI_OPENAI_BASE_URL)
+    client = OpenAI(api_key=OPENAI_API_KEY, base_url=LLM_BASE_URL)
     resp = client.chat.completions.create(
         model=JUDGE_MODEL,
         messages=[
@@ -90,7 +90,6 @@ def swap_and_average(question: str, answer_a: str, answer_b: str, reference: str
                  nếu khác nhau → final = "tie"
     """
     pass1 = pairwise_judge(question, answer_a, answer_b, reference=reference)
-    time.sleep(4)  # Giữ dưới 15 RPM limit của Gemini free tier
     pass2_raw = pairwise_judge(question, answer_b, answer_a, reference=reference)  # SWAP!
 
     # Convert pass2 back to original A/B space

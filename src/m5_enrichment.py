@@ -19,18 +19,34 @@ if hasattr(sys.stderr, "reconfigure"):
 from dataclasses import dataclass
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import GEMINI_API_KEY, GEMINI_MODEL
+from config import GEMINI_API_KEY, GEMINI_MODEL, OPENAI_API_KEY, LLM_BASE_URL
 
 _gemini_model = None
 
 
-def _get_gemini_model(json_mode: bool = False):
-    """Lazy-init Gemini model. (shared helper cho mọi technique)"""
-    import google.generativeai as genai
+class _OllamaCompat:
+    """Giả lập interface `.generate_content(prompt) -> object có .text` của
+    genai.GenerativeModel, nhưng gọi qua Ollama OpenAI-compatible endpoint
+    (local, không giới hạn quota — cả 2 Gemini API key free tier đã cạn RPD).
+    Giữ nguyên interface để không phải sửa 5 hàm gọi _get_gemini_model() bên dưới."""
+    def __init__(self, json_mode: bool = False):
+        self.json_mode = json_mode
 
-    genai.configure(api_key=GEMINI_API_KEY)
-    generation_config = {"response_mime_type": "application/json"} if json_mode else {}
-    return genai.GenerativeModel(GEMINI_MODEL, generation_config=generation_config)
+    def generate_content(self, prompt):
+        from openai import OpenAI
+        client = OpenAI(api_key=OPENAI_API_KEY, base_url=LLM_BASE_URL)
+        kwargs = {"response_format": {"type": "json_object"}} if self.json_mode else {}
+        resp = client.chat.completions.create(
+            model=GEMINI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            **kwargs,
+        )
+        return type("Resp", (), {"text": resp.choices[0].message.content})()
+
+
+def _get_gemini_model(json_mode: bool = False):
+    """Lazy-init LLM model (Ollama local qua OpenAI-compatible endpoint)."""
+    return _OllamaCompat(json_mode=json_mode)
 
 
 @dataclass
@@ -222,10 +238,7 @@ def enrich_chunks(
 
         if (i + 1) % 10 == 0 or (i + 1) == len(chunks):
             print(f"  Enriched {i + 1}/{len(chunks)} chunks...", flush=True)
-
-        # Giữ dưới 15 RPM limit của Gemini free tier (mỗi chunk gọi 1 API call).
-        if GEMINI_API_KEY and (i < len(chunks) - 1):
-            time.sleep(4)
+        # Ollama local không giới hạn quota/RPM — không cần sleep giữa các lần gọi.
 
     return enriched
 

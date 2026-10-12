@@ -2,11 +2,13 @@ colang_version: "1.0"
 
 models:
   - type: main
-    engine: gemini
-    model: gemini-3.1-flash-lite
-    # engine "gemini" được đăng ký thủ công qua register_llm_provider() trong
-    # setup_nemo_rails() (phase_c_guard.py), trỏ tới ChatGoogleGenerativeAI.
-    # API key đọc từ biến môi trường GOOGLE_API_KEY (đã có trong .env).
+    engine: ollama
+    model: qwen2.5:7b-instruct
+    parameters:
+      base_url: http://localhost:11434
+    # engine "ollama" được đăng ký thủ công qua register_llm_provider() trong
+    # setup_nemo_rails() (phase_c_guard.py), trỏ tới ChatOllama (local, không
+    # giới hạn quota — cả 2 Gemini API key free tier đã cạn RPD).
 
 instructions:
   - type: general

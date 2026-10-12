@@ -139,6 +139,10 @@ def run_ragas_50q(answers: list[dict]) -> RagasEvaluation:
         print("⚠️  Không tìm thấy src/m4_eval.py — đã copy từ Day 18 chưa?")
         raise ValueError("Missing m4 evaluator; cannot declare its actual models")
 
+    # Gọi evaluate_ragas() đúng 1 lần với toàn bộ câu hỏi (hợp đồng Task 2 —
+    # test_ragas_adapter_preserves_rows kiểm tra evaluate.assert_called_once()).
+    # Checkpoint/resume theo batch nằm BÊN TRONG m4_eval.evaluate_ragas(),
+    # không phải ở đây — xem m4_eval.py.
     questions     = [a["question"]    for a in answers]
     ans_texts     = [a["answer"]      for a in answers]
     contexts      = [a["contexts"]    for a in answers]
