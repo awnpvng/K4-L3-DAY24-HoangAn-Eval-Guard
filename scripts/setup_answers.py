@@ -103,7 +103,11 @@ def run_query(q: str, search, reranker, top_k: int, client=None) -> tuple[str, l
                     {"role": "user",   "content": f"Context:\n{ctx}\n\nCâu hỏi: {q}"},
                 ],
             )
-            return resp.choices[0].message.content, contexts, "llm", GENERATION_MODEL
+            # Ghi lại model ID thật provider trả về (có thể là snapshot cụ thể khác tên
+            # request, vd Ollama/OpenAI trả về model đã resolve), fallback về tên đã request.
+            reported_model = getattr(resp, "model", None)
+            used_model = reported_model if isinstance(reported_model, str) and reported_model.strip() else GENERATION_MODEL
+            return resp.choices[0].message.content, contexts, "llm", used_model
         except Exception as e:
             print(f"  ⚠️  LLM generation failed: {e}")
 
