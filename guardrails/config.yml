@@ -2,8 +2,11 @@ colang_version: "1.0"
 
 models:
   - type: main
-    engine: openai
-    model: gpt-4o-mini
+    engine: gemini
+    model: gemini-3.1-flash-lite
+    # engine "gemini" được đăng ký thủ công qua register_llm_provider() trong
+    # setup_nemo_rails() (phase_c_guard.py), trỏ tới ChatGoogleGenerativeAI.
+    # API key đọc từ biến môi trường GOOGLE_API_KEY (đã có trong .env).
 
 instructions:
   - type: general

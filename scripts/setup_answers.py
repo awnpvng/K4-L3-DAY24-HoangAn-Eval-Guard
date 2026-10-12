@@ -83,29 +83,25 @@ def build_pipeline():
 
 
 def run_query(q: str, search, reranker, top_k: int, client=None) -> tuple[str, list[str], str, str | None]:
-    from config import OPENAI_API_KEY
+    from config import GOOGLE_API_KEY
 
     results = search.search(q)
     docs    = [{"text": r.text, "score": r.score, "metadata": r.metadata} for r in results]
     reranked = reranker.rerank(q, docs, top_k=top_k)
     contexts = [r.text for r in reranked] if reranked else [r.text for r in results[:3]]
 
-    if (OPENAI_API_KEY or client is not None) and contexts:
+    if (GOOGLE_API_KEY or client is not None) and contexts:
         try:
             if client is None:
-                from openai import OpenAI
-                client = OpenAI()
+                import google.generativeai as genai
+                genai.configure(api_key=GOOGLE_API_KEY)
+                client = genai.GenerativeModel(GENERATION_MODEL)
             ctx = "\n\n".join(contexts)
-            resp = client.chat.completions.create(
-                model=GENERATION_MODEL,
-                messages=[
-                    {"role": "system", "content": "Trả lời CHỈ dựa trên context. Nếu không có → nói 'Không tìm thấy.'"},
-                    {"role": "user",   "content": f"Context:\n{ctx}\n\nCâu hỏi: {q}"},
-                ],
+            resp = client.generate_content(
+                ["Trả lời CHỈ dựa trên context. Nếu không có → nói 'Không tìm thấy.'",
+                 f"Context:\n{ctx}\n\nCâu hỏi: {q}"]
             )
-            reported_model = getattr(resp, "model", None)
-            used_model = reported_model if isinstance(reported_model, str) and reported_model.strip() else GENERATION_MODEL
-            return resp.choices[0].message.content, contexts, "llm", used_model
+            return resp.text, contexts, "llm", GENERATION_MODEL
         except Exception as e:
             print(f"  ⚠️  LLM generation failed: {e}")
 
@@ -137,17 +133,35 @@ def main(argv=None):
         sys.exit(1)
 
     print(f"\nRunning {len(test_set)} queries...")
-    answers = []
-    from config import OPENAI_API_KEY
+    from config import GOOGLE_API_KEY, GENERATION_MODEL
     client = None
-    if OPENAI_API_KEY:
-        from openai import OpenAI
-        client = OpenAI()
-    t_start = time.time()
+    if GOOGLE_API_KEY:
+        import google.generativeai as genai
+        genai.configure(api_key=GOOGLE_API_KEY)
+        client = genai.GenerativeModel(GENERATION_MODEL)
 
-    for i, item in enumerate(test_set):
+    # ── Checkpoint/resume: lưu ngay sau MỖI câu, để API quota/crash/network
+    # giữa chừng không làm mất các câu đã xử lý. Chạy lại script sẽ tự resume
+    # từ checkpoint, không gọi lại API cho các câu đã có answer.
+    checkpoint_path = ANSWERS_PATH + ".partial.json"
+    answers_by_id: dict[int, dict] = {}
+    if os.path.exists(checkpoint_path):
+        with open(checkpoint_path, encoding="utf-8") as f:
+            for row in json.load(f):
+                answers_by_id[row["id"]] = row
+        print(f"  ↻ Resume từ checkpoint: {len(answers_by_id)}/{len(test_set)} câu đã có sẵn")
+
+    def _save_checkpoint():
+        os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+        ordered = [answers_by_id[item["id"]] for item in test_set if item["id"] in answers_by_id]
+        with open(checkpoint_path, "w", encoding="utf-8") as f:
+            json.dump(ordered, f, ensure_ascii=False, indent=2)
+
+    t_start = time.time()
+    remaining = [item for item in test_set if item["id"] not in answers_by_id]
+    for i, item in enumerate(remaining):
         answer, contexts, generation_mode, generation_model = run_query(item["question"], search, reranker, top_k, client)
-        answers.append({
+        answers_by_id[item["id"]] = {
             "id":           item["id"],
             "distribution": item["distribution"],
             "question":     item["question"],
@@ -156,13 +170,22 @@ def main(argv=None):
             "ground_truth": item["ground_truth"],
             "generation_mode": generation_mode,
             "generation_model": generation_model,
-        })
-        if (i + 1) % 10 == 0:
-            print(f"  [{i+1}/{len(test_set)}] done ({time.time()-t_start:.0f}s elapsed)")
+        }
+        _save_checkpoint()  # ghi ngay sau mỗi câu — 1 câu lỗi không mất các câu trước
+
+        if (i + 1) % 10 == 0 or (i + 1) == len(remaining):
+            print(f"  [{len(answers_by_id)}/{len(test_set)}] done ({time.time()-t_start:.0f}s elapsed)")
+        # Giữ dưới RPM limit của Gemini free tier: ~4s/request
+        if i < len(remaining) - 1:  # Không sleep ở request cuối
+            time.sleep(4)
+
+    answers = [answers_by_id[item["id"]] for item in test_set]
 
     os.makedirs(os.path.dirname(ANSWERS_PATH), exist_ok=True)
     with open(ANSWERS_PATH, "w", encoding="utf-8") as f:
         json.dump(answers, f, ensure_ascii=False, indent=2)
+    if os.path.exists(checkpoint_path):
+        os.remove(checkpoint_path)  # đã có file final, dọn checkpoint
 
     print(f"\n✓ Saved {len(answers)} answers → artifacts/answers_50q.json")
     print(f"  Total time: {time.time()-t_start:.1f}s")
